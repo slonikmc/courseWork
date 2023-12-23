@@ -43,6 +43,33 @@ async def cmd_start_db(user_id):
     # Закрытие подключения
     await connection.close()
 
+async def get_item_photo_by_id(i_id):
+    try:
+        # Установление подключения к базе данных
+        connection = await create_db_connection()
+        # Получение фотографии по i_id
+        photo = await connection.fetchval("SELECT photo FROM items WHERE i_id = $1", i_id)
+        # Закрытие подключения
+        return photo
+    finally:
+        await connection.close()
+
+
+async def get_item_photo_by_name(name):
+    try:
+        # Установление подключения к базе данных
+        connection = await create_db_connection()
+        # Получение фотографии по названию
+        photo = await connection.fetchval("SELECT photo FROM items WHERE name = $1", name)
+        # Закрытие подключения
+        if photo is not None:
+            return photo
+        else:
+            return None  # Возвращаем None, если название товара не найдено
+    finally:
+        await connection.close()
+
+
 async def add_item(state):
     async with state.proxy() as data:
         connection = await create_db_connection()

@@ -45,6 +45,12 @@ async def cmd_start(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
         await message.answer(f'Вы авторизовались как администратор!', reply_markup=kb.main_admin)
 
+@dp.message_handler(text='В главное меню')
+async def process_main_menu(message: types.Message):
+    if message.from_user.id == int(os.getenv('ADMIN_ID')):
+        await message.answer('Выберите действие:', reply_markup=kb.main_admin)
+    else:
+        await message.answer('Выберите действие:', reply_markup=kb.main)
 
 @dp.message_handler(text='Каталог')
 async def catalog(message: types.Message):
@@ -68,7 +74,14 @@ async def contacts(message: types.Message):
     else:
         await message.reply('Я тебя не понимаю.')
 
-
+async def delete_photo_by_filename(file_name):
+    # Обработка пути к файлу
+    file_path = os.path.join(photo_directory, file_name)
+    if os.path.exists(file_path):
+        os.remove(file_path)  # Удаляем файл
+        return True
+    else:
+        return False
 @dp.message_handler(text='Удалить товар')
 async def delete_by_name(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -85,13 +98,21 @@ async def delete_by_name(message: types.Message):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
-
 @dp.message_handler(state=DeleteBy.name)
 async def process_delete_by_name(message: types.Message, state: FSMContext):
-    name = message.text
-    await db.delete_item_by_name(name)
-    await state.finish()
-    await message.answer(f'Товар с названием "{name}" успешно удален.')
+    if message.from_user.id == int(os.getenv('ADMIN_ID')):
+        name = message.text
+        photo_name = await db.get_item_photo_by_name(name)  # Получение названия фотографии
+        if photo_name:
+            await db.delete_item_by_name(name)
+            await delete_photo_by_filename(photo_name)  # Удаление фотографии
+            await state.finish()
+            await message.answer(f'Товар с названием "{name}" успешно удален вместе с фотографией.')
+        else:
+            await message.answer('Товар с таким названием не найден.')
+            await state.finish()
+    else:
+        await message.reply('У вас нет прав для выполнения этой команды.')
 
 
 @dp.message_handler(text='Удалить по id')
@@ -102,14 +123,22 @@ async def delete_by_id(message: types.Message):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
-
 @dp.message_handler(state=DeleteBy.id)
 async def process_delete_by_id(message: types.Message, state: FSMContext):
-    id = message.text
-    id = int(id)
-    await db.delete_item_by_id(id)
-    await state.finish()
-    await message.answer(f'Товар с артикулом "{id}" успешно удален.')
+    if message.from_user.id == int(os.getenv('ADMIN_ID')):
+        id = int(message.text)
+        photo_name = await db.get_item_photo_by_id(id)  # Получение названия фотографии
+        if photo_name:
+            await db.delete_item_by_id(id)
+            await delete_photo_by_filename(photo_name)  # Удаление фотографии
+            await state.finish()
+            await message.answer(f'Товар с артикулом "{id}" успешно удален вместе с фотографией.')
+        else:
+            await message.answer('Товар с таким артикулом не найден.')
+            await state.finish()
+    else:
+        await message.reply('У вас нет прав для выполнения этой команды.')
+
 
 
 @dp.message_handler(text='Пейзажи')
@@ -162,7 +191,6 @@ async def cancel_add_item(message: types.Message, state: FSMContext):
             del data['description']  # Удалить введенное описание, если есть
     await state.finish()
     await message.answer('Добавление товара отменено.', reply_markup=kb.admin_panel)
-
 
 # Добавление товара
 @dp.message_handler(text='Добавить товар')
@@ -223,9 +251,8 @@ async def add_item_photo(message: types.Message, state: FSMContext):
 
         with open(photo_path, 'wb') as new_file:
             new_file.write(downloaded_file.read())
-        # Теперь у вас есть фотография сохраненная на сервере, и вы можете сохранить путь к ней в базе данных
 
-        data['photo'] = photo_path
+        data['photo'] = file_name
     await db.add_item(state)
     await message.answer('Товар успешно создан!', reply_markup=kb.admin_panel)
     await state.finish()
