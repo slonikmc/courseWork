@@ -16,8 +16,7 @@ async def db_start():
     # Создание таблицы accounts
     await connection.execute("CREATE TABLE IF NOT EXISTS accounts("
                             "id SERIAL PRIMARY KEY, "
-                            "tg_id INTEGER, "
-                            "cart_id TEXT)")
+                            "tg_id BIGINT NOT NULL)")
 
     # Создание таблицы items
     await connection.execute("CREATE TABLE IF NOT EXISTS items("
@@ -27,6 +26,11 @@ async def db_start():
                             "price TEXT, "
                             "photo TEXT, "
                             "category TEXT)")
+
+    await connection.execute("CREATE TABLE IF NOT EXISTS cart("
+                             "id SERIAL PRIMARY KEY, "
+                             "user_id BIGINT NOT NULL, "
+                             "item_id INT NOT NULL)")
 
     # Закрытие подключения
     await connection.close()
@@ -79,6 +83,29 @@ async def add_item(state):
         )
         await connection.close()
 
+
+async def add_item_to_cart(tg_id, item_id):
+    connection = await create_db_connection()
+    # Проверка наличия существующей записи
+    existing_record = await connection.fetchrow(
+        "SELECT * FROM cart WHERE user_id = $1 AND item_id = $2",
+        tg_id, item_id
+    )
+    if existing_record:
+        # Если запись найдена, удаляем ее
+        await connection.execute(
+            "DELETE FROM cart WHERE user_id = $1 AND item_id = $2",
+            tg_id, item_id
+        )
+    # Вставка новой записи
+    await connection.execute(
+        "INSERT INTO cart (user_id, item_id) VALUES ($1, $2)",
+        tg_id, item_id
+    )
+
+    await connection.close()
+
+
 async def delete_item_by_name(name):
     connection = await create_db_connection()
     await connection.execute("DELETE FROM items WHERE name = $1", name)
@@ -113,5 +140,43 @@ async def get_portrets():
         portrets = await connection.fetch(
             "SELECT i_id, name, description, price, photo FROM items WHERE category = 'portrets'")
         return portrets
+    finally:
+        await connection.close()
+
+async def get_user_cart_items(user_id):
+    try:
+        connection = await create_db_connection()
+        print("Успешное установление соединения с базой данных")
+        query = "SELECT items.i_id, items.name, items.description, items.price, items.photo " \
+                "FROM cart " \
+                "JOIN items ON cart.item_id = items.i_id " \
+                "WHERE cart.user_id = $1"
+        items = await connection.fetch(query, user_id)
+        print("Запрос к базе данных выполнен успешно")
+        return items
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
+        return []
+
+async def get_user_cart_items(user_id):
+    try:
+        connection = await create_db_connection()
+        print("Успешное установление соединения с базой данных")
+        query = "SELECT items.i_id, items.name, items.description, items.price, items.photo " \
+                "FROM cart " \
+                "JOIN items ON cart.item_id = items.i_id " \
+                "WHERE cart.user_id = $1"
+        items = await connection.fetch(query, user_id)
+        print("Запрос к базе данных выполнен успешно")
+        return items
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
+        return []
+
+async def delete_item_from_cart(user_id, item_id):
+    try:
+        connection = await create_db_connection()
+        query = "DELETE FROM cart WHERE user_id = $1 AND item_id = $2"
+        await connection.execute(query, user_id, item_id)
     finally:
         await connection.close()

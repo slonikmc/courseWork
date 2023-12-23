@@ -57,10 +57,53 @@ async def catalog(message: types.Message):
     await message.answer(f'Держи!', reply_markup=kb.catalog_list)
 
 
+# Обработчик для кнопки "Удалить из корзины"
+# Обработчик для кнопки "Удалить из корзины"
+@dp.callback_query_handler(lambda c: c.data.startswith('delete_'))
+async def delete_item_from_cart(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    print(f"Содержимое callback_data: {call.data}")  # Вывод содержимого call.data для отладки
+    item_id = int(call.data.split('_')[1])
+    print(f"Извлеченный item_id: {item_id}")  # Вывод извлеченного item_id для отладки
+
+    await db.delete_item_from_cart(user_id, item_id)  # Вызываем функцию удаления товара из корзины
+    await bot.answer_callback_query(call.id, text="Товар удален из корзины")
+
+# Обработчик для кнопки "Сделать заказ"
+@dp.callback_query_handler(lambda c: c.data.startswith('order_'))
+async def make_order(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    print(f"Содержимое callback_data: {call.data}")  # Вывод содержимого call.data для отладки
+    item_id = int(call.data.split('_')[1])
+    print(f"Извлеченный item_id: {item_id}")  # Вывод извлеченного item_id для отладки
+
+    # Здесь можно добавить логику выполнения заказа, например, добавление товара в базу данных заказов
+    await process_order(user_id, item_id)  # Здесь нужно написать логику обработки заказа
+
+    await bot.answer_callback_query(call.id, text="Заказ оформлен успешно")
+
+# Пример функции обработки заказа
+async def process_order(user_id, item_id):
+    # Здесь может содержаться логика обработки заказа, такая как добавление товара в базу данных заказов
+    print(f"Пользователь {user_id} сделал заказ товара с id {item_id}")
+    await db.delete_item_from_cart(user_id, item_id)
+
+# Функция для отображения корзины
 @dp.message_handler(text='Корзина')
 async def cart(message: types.Message):
-    await message.answer(f'Корзина пуста!')
+    user_id = message.from_user.id
+    cart_items = await db.get_user_cart_items(user_id)
 
+    if cart_items:
+        for item_id, name, description, price, photo in cart_items:
+            photo_path = os.path.join(photo_directory, photo)
+            with open(photo_path, 'rb') as photo_file:
+                caption = f"ID товара: {item_id}, Название: {name}, Описание: {description}, Цена: {price}"
+
+                keyboard = kb.generate_cart_keyboard(item_id)
+                await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'), caption=caption, reply_markup=keyboard)
+    else:
+        await message.reply("Ваша корзина пуста")
 
 @dp.message_handler(text='Контакты')
 async def contacts(message: types.Message):
@@ -139,7 +182,14 @@ async def process_delete_by_id(message: types.Message, state: FSMContext):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
-
+@dp.callback_query_handler(lambda c: c.data.startswith('add_to_cart_'))
+async def add_to_cart_handler(call: types.CallbackQuery):
+    split_data = call.data.split('_')
+    print(split_data)  # Добавляем эту строку для отображения значений, полученных после разделения
+    item_id = int(split_data[3])
+    user_id = call.from_user.id
+    await db.add_item_to_cart(user_id, item_id)
+    await call.message.answer("Товар добавлен в корзину!")
 
 @dp.message_handler(text='Пейзажи')
 async def handle_show_landscapes(message: types.Message):
@@ -147,14 +197,28 @@ async def handle_show_landscapes(message: types.Message):
     if landscapes:
         for landscape in landscapes:
             i_id, name, description, price, photo = landscape
-            photo_path = os.path.join(photo_directory, photo)  # Формируем полный путь к файлу фотографии
+            photo_path = os.path.join(photo_directory, photo)
             with open(photo_path, 'rb') as photo_file:
                 caption = f"Артикул: {i_id}, Название: {name}, Описание: {description}, Цена: {price}"
-                await bot.send_photo(chat_id=message.chat.id, photo=InputFile(photo_file, filename='photo'),
-                                     caption=caption)
+                keyboard = kb.generate_cart(i_id)
+                await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'), caption=caption, reply_markup=keyboard)
     else:
         await message.reply("Пейзажи не найдены в каталоге")
-
+@dp.message_handler(text='Пейзажи')
+async def handle_show_landscapes(message: types.Message):
+    landscapes = await db.get_landscapes()
+    if landscapes:
+        for landscape in landscapes:
+            i_id, name, description, price, photo = landscape
+            photo_path = os.path.join(photo_directory, photo)
+            with open(photo_path, 'rb') as photo_file:
+                caption = f"Артикул: {i_id}, Название: {name}, Описание: {description}, Цена: {price}"
+                keyboard = types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton(text="Добавить в корзину", callback_data=f"add_to_cart_{str(i_id)}"))
+                await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
+                                     caption=caption, reply_markup=keyboard)
+    else:
+        await message.reply("Пейзажи не найдены в каталоге")
 @dp.message_handler(text='Натюрморты')
 async def handle_show_still_life(message: types.Message):
     still_life = await db.get_still_lifes()
@@ -164,7 +228,10 @@ async def handle_show_still_life(message: types.Message):
             photo_path = os.path.join(photo_directory, photo)  # Формируем полный путь к файлу фотографии
             with open(photo_path, 'rb') as photo_file:
                 caption = f"Артикул: {i_id}, Название: {name}, Описание: {description}, Цена: {price}"
-                await bot.send_photo(chat_id=message.chat.id, photo=InputFile(photo_file, filename='photo'), caption=caption)
+                keyboard = types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton(text="Добавить в корзину", callback_data=f"add_to_cart_{str(i_id)}"))
+                await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
+                                     caption=caption, reply_markup=keyboard)
     else:
         await message.reply("Натюрморты не найдены в каталоге")
 
