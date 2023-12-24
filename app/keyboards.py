@@ -7,7 +7,7 @@ main_admin = ReplyKeyboardMarkup(resize_keyboard=True)
 (main_admin.add('Каталог').add('Корзина').add('Контакты').add('История заказов').add('Панель администратора'))
 
 admin_panel = ReplyKeyboardMarkup(resize_keyboard=True)
-admin_panel.add('Добавить товар').add('Удалить товар').add('Сделать рассылку').add('В главное меню')
+admin_panel.add('Добавить товар').add('Удалить товар').add('Сделать выгрузку данных').add('В главное меню')
 
 delete_panel = ReplyKeyboardMarkup(resize_keyboard=True)
 delete_panel.add('Удалить по названию').add('Удалить по id').add('В главное меню')
