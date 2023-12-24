@@ -1,4 +1,5 @@
 from aiogram import Bot, Dispatcher, executor, types
+from aiogram.dispatcher.filters import state
 from aiogram.types import callback_query
 from aiogram.types import InputFile
 from dotenv import load_dotenv
@@ -6,8 +7,10 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
 import os
+from datetime import date
 from app import keyboards as kb
 from app import database as db
+from app import models as md
 
 storage = MemoryStorage()
 load_dotenv()
@@ -45,6 +48,7 @@ async def cmd_start(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
         await message.answer(f'Вы авторизовались как администратор!', reply_markup=kb.main_admin)
 
+
 @dp.message_handler(text='В главное меню')
 async def process_main_menu(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -52,12 +56,12 @@ async def process_main_menu(message: types.Message):
     else:
         await message.answer('Выберите действие:', reply_markup=kb.main)
 
+
 @dp.message_handler(text='Каталог')
 async def catalog(message: types.Message):
     await message.answer(f'Держи!', reply_markup=kb.catalog_list)
 
 
-# Обработчик для кнопки "Удалить из корзины"
 # Обработчик для кнопки "Удалить из корзины"
 @dp.callback_query_handler(lambda c: c.data.startswith('delete_'))
 async def delete_item_from_cart(call: types.CallbackQuery):
@@ -66,48 +70,82 @@ async def delete_item_from_cart(call: types.CallbackQuery):
     item_id = int(call.data.split('_')[1])
     print(f"Извлеченный item_id: {item_id}")  # Вывод извлеченного item_id для отладки
 
-    await db.delete_item_from_cart(user_id, item_id)  # Вызываем функцию удаления товара из корзины
-    await bot.answer_callback_query(call.id, text="Товар удален из корзины")
+    cart_item = md.Cart.get_or_none(item_id=item_id, user_id=user_id)  # Получить конкретный товар из корзины
+    if cart_item:  # Проверить, найден ли товар
+        cart_item.delete_instance()
+        await bot.answer_callback_query(call.id, text="Товар удален из корзины")  # Ответить на запрос об удалении
+    else:
+        await bot.answer_callback_query(call.id, text="Товар не найден в корзине")  # Ответить, если товар не найден
+
 
 # Обработчик для кнопки "Сделать заказ"
 @dp.callback_query_handler(lambda c: c.data.startswith('order_'))
 async def make_order(call: types.CallbackQuery):
     user_id = call.from_user.id
-    print(f"Содержимое callback_data: {call.data}")  # Вывод содержимого call.data для отладки
+    print(f"Содержимое callback_data: {call.data}")
     item_id = int(call.data.split('_')[1])
-    print(f"Извлеченный item_id: {item_id}")  # Вывод извлеченного item_id для отладки
+    print(f"Извлеченный item_id: {item_id}")
 
-    # Здесь можно добавить логику выполнения заказа, например, добавление товара в базу данных заказов
-    await process_order(user_id, item_id)  # Здесь нужно написать логику обработки заказа
+    # Получаем цену товара
+    item = md.Item.get(md.Item.i_id == item_id)
+    price = item.price
+
+    # Создаем запись в таблице History
+    history_entry = md.History.create(item_id=item_id, i_id=user_id, date=date.today(), price=price)
+    history_entry.save()
+
+    cart_item = md.Cart.get_or_none(item_id=item_id, user_id=user_id)  # Получить конкретный товар из корзины
+    if cart_item:  # Проверить, найден ли товар
+        cart_item.delete_instance()
 
     await bot.answer_callback_query(call.id, text="Заказ оформлен успешно")
 
-# Пример функции обработки заказа
-async def process_order(user_id, item_id):
-    # Здесь может содержаться логика обработки заказа, такая как добавление товара в базу данных заказов
-    print(f"Пользователь {user_id} сделал заказ товара с id {item_id}")
-    await db.delete_item_from_cart(user_id, item_id)
 
 # Функция для отображения корзины
 @dp.message_handler(text='Корзина')
 async def cart(message: types.Message):
     user_id = message.from_user.id
-    cart_items = await db.get_user_cart_items(user_id)
+    cart_items = md.Cart.select().where(md.Cart.user_id == user_id)
 
     if cart_items:
-        for item_id, name, description, price, photo in cart_items:
+        cart_items = (md.Item
+                      .select(md.Item.i_id, md.Item.name, md.Item.description, md.Item.price, md.Item.photo)
+                      .join(md.Cart, on=(md.Item.i_id == md.Cart.item_id))
+                      .where(md.Cart.user_id == user_id))
+        for cart_item in cart_items:
+            item_id = cart_item.i_id
+            name = cart_item.name
+            description = cart_item.description
+            price = cart_item.price
+            photo = cart_item.photo
             photo_path = os.path.join(photo_directory, photo)
             with open(photo_path, 'rb') as photo_file:
                 caption = f"ID товара: {item_id}, Название: {name}, Описание: {description}, Цена: {price}"
 
                 keyboard = kb.generate_cart_keyboard(item_id)
-                await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'), caption=caption, reply_markup=keyboard)
+                await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
+                                     caption=caption, reply_markup=keyboard)
     else:
         await message.reply("Ваша корзина пуста")
 
+
 @dp.message_handler(text='Контакты')
 async def contacts(message: types.Message):
-    await message.answer(f'Покупать товар у него: @slomnikc')
+    await message.reply('@slonikmc')
+
+
+@dp.message_handler(text='История заказов')
+async def show_history(message: types.Message):
+    query = md.History.select()
+    orders_info = "История заказов:\n"
+    if query.count() > 0:
+        for order in query:
+            order_info = f"Заказ №{order.item_id}: ID - {order.i_id}, Дата - {order.date}, Цена - {order.price}\n"
+            orders_info += order_info
+    else:
+        orders_info = "Нет доступных заказов."
+
+    await message.reply(orders_info)
 
 
 @dp.message_handler(text='Панель администратора')
@@ -117,6 +155,7 @@ async def contacts(message: types.Message):
     else:
         await message.reply('Я тебя не понимаю.')
 
+
 async def delete_photo_by_filename(file_name):
     # Обработка пути к файлу
     file_path = os.path.join(photo_directory, file_name)
@@ -125,6 +164,8 @@ async def delete_photo_by_filename(file_name):
         return True
     else:
         return False
+
+
 @dp.message_handler(text='Удалить товар')
 async def delete_by_name(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -141,14 +182,16 @@ async def delete_by_name(message: types.Message):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
+
 @dp.message_handler(state=DeleteBy.name)
 async def process_delete_by_name(message: types.Message, state: FSMContext):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
         name = message.text
-        photo_name = await db.get_item_photo_by_name(name)  # Получение названия фотографии
-        if photo_name:
-            await db.delete_item_by_name(name)
-            await delete_photo_by_filename(photo_name)  # Удаление фотографии
+        item = md.Item.get_or_none(name=name)  # Retrieve the item by name from the database
+        if item:
+            photo_name = item.photo  # Assuming the photo name is stored as an attribute on the Item model
+            item.delete_instance()  # Delete the item from the database
+            await delete_photo_by_filename(photo_name)  # Assuming a function to delete the photo by filename
             await state.finish()
             await message.answer(f'Товар с названием "{name}" успешно удален вместе с фотографией.')
         else:
@@ -166,14 +209,16 @@ async def delete_by_id(message: types.Message):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
+
 @dp.message_handler(state=DeleteBy.id)
 async def process_delete_by_id(message: types.Message, state: FSMContext):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
-        id = int(message.text)
-        photo_name = await db.get_item_photo_by_id(id)  # Получение названия фотографии
-        if photo_name:
-            await db.delete_item_by_id(id)
-            await delete_photo_by_filename(photo_name)  # Удаление фотографии
+        id = message.text
+        item = md.Item.get_or_none(i_id=id)  # Retrieve the item by name from the database
+        if item:
+            photo_name = item.photo  # Assuming the photo name is stored as an attribute on the Item model
+            item.delete_instance()  # Delete the item from the database
+            await delete_photo_by_filename(photo_name)  # Assuming a function to delete the photo by filename
             await state.finish()
             await message.answer(f'Товар с артикулом "{id}" успешно удален вместе с фотографией.')
         else:
@@ -182,148 +227,123 @@ async def process_delete_by_id(message: types.Message, state: FSMContext):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
+
 @dp.callback_query_handler(lambda c: c.data.startswith('add_to_cart_'))
 async def add_to_cart_handler(call: types.CallbackQuery):
     split_data = call.data.split('_')
     print(split_data)  # Добавляем эту строку для отображения значений, полученных после разделения
     item_id = int(split_data[3])
     user_id = call.from_user.id
-    await db.add_item_to_cart(user_id, item_id)
+    new_art = md.Cart.create(user_id=user_id, item_id=item_id)
+    new_art.save()
     await call.message.answer("Товар добавлен в корзину!")
+
 
 @dp.message_handler(text='Пейзажи')
 async def handle_show_landscapes(message: types.Message):
-    landscapes = await db.get_landscapes()
+    landscapes = md.Item.select().where(md.Item.category == 'peizaj')  # Assuming 'Пейзажи' is the category for landscapes
     if landscapes:
         for landscape in landscapes:
-            i_id, name, description, price, photo = landscape
-            photo_path = os.path.join(photo_directory, photo)
+            photo_path = os.path.join(photo_directory, landscape.photo)  # Assuming 'photo' is the attribute representing the photo path
             with open(photo_path, 'rb') as photo_file:
-                caption = f"Артикул: {i_id}, Название: {name}, Описание: {description}, Цена: {price}"
-                keyboard = kb.generate_cart(i_id)
+                caption = f"Артикул: {landscape.i_id}, Название: {landscape.name}, Описание: {landscape.description}, Цена: {landscape.price}"
+                keyboard = kb.generate_cart(landscape.i_id)  # Assuming a function to generate the cart keyboard
                 await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'), caption=caption, reply_markup=keyboard)
     else:
         await message.reply("Пейзажи не найдены в каталоге")
-@dp.message_handler(text='Пейзажи')
-async def handle_show_landscapes(message: types.Message):
-    landscapes = await db.get_landscapes()
-    if landscapes:
-        for landscape in landscapes:
-            i_id, name, description, price, photo = landscape
-            photo_path = os.path.join(photo_directory, photo)
-            with open(photo_path, 'rb') as photo_file:
-                caption = f"Артикул: {i_id}, Название: {name}, Описание: {description}, Цена: {price}"
-                keyboard = types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton(text="Добавить в корзину", callback_data=f"add_to_cart_{str(i_id)}"))
-                await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
-                                     caption=caption, reply_markup=keyboard)
-    else:
-        await message.reply("Пейзажи не найдены в каталоге")
+
+
 @dp.message_handler(text='Натюрморты')
 async def handle_show_still_life(message: types.Message):
-    still_life = await db.get_still_lifes()
+    still_life = md.Item.select().where(md.Item.category == 'naturmorts')
     if still_life:
-        for stl in still_life:
-            i_id, name, description, price, photo = stl
-            photo_path = os.path.join(photo_directory, photo)  # Формируем полный путь к файлу фотографии
+        for still_l in still_life:
+            photo_path = os.path.join(photo_directory,
+                                      still_l.photo)  # Assuming 'photo' is the attribute representing the photo path
             with open(photo_path, 'rb') as photo_file:
-                caption = f"Артикул: {i_id}, Название: {name}, Описание: {description}, Цена: {price}"
-                keyboard = types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton(text="Добавить в корзину", callback_data=f"add_to_cart_{str(i_id)}"))
+                caption = f"Артикул: {still_l.i_id}, Название: {still_l.name}, Описание: {still_l.description}, Цена: {still_l.price}"
+                keyboard = kb.generate_cart(still_l.i_id)  # Assuming a function to generate the cart keyboard
                 await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
                                      caption=caption, reply_markup=keyboard)
     else:
         await message.reply("Натюрморты не найдены в каталоге")
 
+
 @dp.message_handler(text='Портреты')
 async def handle_show_portrets(message: types.Message):
-    portret = await db.get_portrets()
+    portret = md.Item.select().where(md.Item.category == 'portrets')
     if portret:
         for prt in portret:
-            i_id, name, description, price, photo = prt
-            photo_path = os.path.join(photo_directory, photo)  # Формируем полный путь к файлу фотографии
+            photo_path = os.path.join(photo_directory, prt.photo)  # Assuming 'photo' is the attribute representing the photo path
             with open(photo_path, 'rb') as photo_file:
-                caption = f"Артикул: {i_id}, Название: {name}, Описание: {description}, Цена: {price}"
-                await bot.send_photo(chat_id=message.chat.id, photo=InputFile(photo_file, filename='photo'), caption=caption)
+                caption = f"Артикул: {prt.i_id}, Название: {prt.name}, Описание: {prt.description}, Цена: {prt.price}"
+                keyboard = kb.generate_cart(prt.i_id)  # Assuming a function to generate the cart keyboard
+                await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
+                                     caption=caption, reply_markup=keyboard)
     else:
         await message.reply("Портреты не найдены в каталоге")
+
 
 # Обработка отмены
 @dp.message_handler(text='Отмена', state='*')
 async def cancel_add_item(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        if 'photo' in data:
-            del data['photo']  # Удалить сохраненный путь к фотографии
-        if 'description' in data:
-            del data['description']  # Удалить введенное описание, если есть
     await state.finish()
     await message.answer('Добавление товара отменено.', reply_markup=kb.admin_panel)
 
-# Добавление товара
+# Handling the addition of a new item
 @dp.message_handler(text='Добавить товар')
-async def add_item(message: types.Message):
+async def add_item_type(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
         await NewOrder.type.set()
         await message.answer(f'Выберите тип товара', reply_markup=kb.catalog_list)
     else:
-        await message.reply('Я тебя не понимаю.')
+        await message.reply('Доступ запрещен.')
 
-
+# Handling the states and message handlers for adding a new item using ORM
 @dp.callback_query_handler(state=NewOrder.type)
 async def add_item_type(call: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
         data['type'] = call.data
-    await call.message.answer(f'напишите название товара', reply_markup=kb.cancel)
+    await call.message.answer(f'Напишите название', reply_markup=kb.cancel)
     await NewOrder.next()
-
 
 @dp.message_handler(state=NewOrder.name)
 async def add_item_name(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['name'] = message.text
-    await message.answer('Напишите описание товара')
+    await message.answer('Напишите описание')
     await NewOrder.next()
-
 
 @dp.message_handler(state=NewOrder.description)
-async def add_item_description(message: types.Message, state: FSMContext):
+async def add_item_name(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['description'] = message.text
-    await message.answer('Напишите цену товара')
+    await message.answer('Введите цену')
     await NewOrder.next()
-
 
 @dp.message_handler(state=NewOrder.price)
-async def add_item_desc(message: types.Message, state: FSMContext):
+async def add_item_name(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['price'] = message.text
-    await message.answer('Отправьте фотографию товара')
+    await message.answer('Пришлите фотографию')
     await NewOrder.next()
-
-
-@dp.message_handler(lambda message: not message.photo, state=NewOrder.photo)
-async def add_item_photo_check(message: types.Message):
-    await message.answer('Это не фотография!')
-
-
 @dp.message_handler(content_types=['photo'], state=NewOrder.photo)
 async def add_item_photo(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-
+        # Save the photo to the server and store the file path in the data
         file_name = f"photo_{message.photo[-1].file_id}.jpg"
         photo_path = os.path.join(photo_directory, file_name)
         file_info = await bot.get_file(message.photo[-1].file_id)
-        # Сохранение файла на сервере
         downloaded_file = await bot.download_file(file_info.file_path)
-
         with open(photo_path, 'wb') as new_file:
             new_file.write(downloaded_file.read())
-
         data['photo'] = file_name
-    await db.add_item(state)
-    await message.answer('Товар успешно создан!', reply_markup=kb.admin_panel)
+        print(data['type'], data['name'], data['description'], data['price'], data['photo'])
+        # Create a new item in the database using the provided details
+        new_item = md.Item(category=data['type'], name=data['name'], description=data['description'], price=data['price'], photo=data['photo'])
+        new_item.save()  # Assuming 'save' is the method to save a new item to the database
+    await message.answer('Товар успешно загружен!', reply_markup=kb.admin_panel)
     await state.finish()
-
 
 @dp.message_handler(content_types=['sticker'])
 async def check_sticker(message: types.Message):
@@ -347,7 +367,6 @@ async def callback_query_keyboard(callback_query: types.CallbackQuery):
     elif callback_query.data == 'portrets':
         await bot.send_message(chat_id=callback_query.from_user.id, text='Вы выбрали портреты')
         await handle_show_portrets(callback_query.message)
-
 
 @dp.message_handler()
 async def answer(message: types.Message):

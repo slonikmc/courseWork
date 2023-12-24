@@ -1,6 +1,12 @@
 import asyncpg
+from peewee import PostgresqlDatabase
 
-# Подключение к базе данных
+db = PostgresqlDatabase(
+        user='postgres',
+        password='Azaza431',
+        host='localhost',
+        port=5432,
+        database='tg')
 
 # Функция для установления подключения к базе данных
 async def create_db_connection():
@@ -31,6 +37,13 @@ async def db_start():
                              "id SERIAL PRIMARY KEY, "
                              "user_id BIGINT NOT NULL, "
                              "item_id INT NOT NULL)")
+
+    await connection.execute("CREATE TABLE IF NOT EXISTS history("
+                             "id SERIAL PRIMARY KEY, "
+                             "item_id INT NOT NULL, "
+                             "i_id BIGINT NOT NULL, "
+                             "date DATE NOT NULL, "
+                             "price INT NOT NULL)")
 
     # Закрытие подключения
     await connection.close()

@@ -1,10 +1,10 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
 main = ReplyKeyboardMarkup(resize_keyboard=True)
-main.add('Каталог').add('Корзина').add('Контакты')
+main.add('Каталог').add('Корзина').add('Контакты').add('История заказов')
 
 main_admin = ReplyKeyboardMarkup(resize_keyboard=True)
-(main_admin.add('Каталог').add('Корзина').add('Контакты').add('Панель администратора'))
+(main_admin.add('Каталог').add('Корзина').add('Контакты').add('История заказов').add('Панель администратора'))
 
 admin_panel = ReplyKeyboardMarkup(resize_keyboard=True)
 admin_panel.add('Добавить товар').add('Удалить товар').add('Сделать рассылку').add('В главное меню')
