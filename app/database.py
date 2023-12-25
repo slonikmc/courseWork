@@ -1,5 +1,8 @@
+import asyncio
+
 import asyncpg
 from peewee import PostgresqlDatabase
+import yadisk
 
 db = PostgresqlDatabase(
         user='postgres',
@@ -17,6 +20,21 @@ async def create_db_connection():
         port=5432,
         database='tg'
     )
+
+# Асинхронная функция для создания резервной копии и загрузки на Яндекс.Диск
+async def upload_backup():
+    # Создание резервной копии базы данных с помощью pg_dump
+    # pg_dump_command = r".\pg_dump -U postgres -h localhost -d tg > C:/Users/Akelk/arts_store2/pythonProject/backup.sql"
+    # subprocess.run(pg_dump_command, shell=True)
+
+    # Загрузка резервной копии на Яндекс.Диск
+    y = yadisk.YaDisk(token="y0_AgAAAAA0sAXgAAsLIQAAAAD14tMCkWyDfpgdRbiUqY8blmvUr8TNDL0")
+    if y.exists(f"/backup.sql"):
+        y.remove(f"/backup.sql")
+
+    y.upload("backup.sql", f"/backup.sql")
+
+# Функция для создания всех используемых таблиц, если их нет
 async def db_start():
     connection = await create_db_connection()
     # Создание таблицы accounts
@@ -29,15 +47,17 @@ async def db_start():
                             "i_id SERIAL PRIMARY KEY, "
                             "name TEXT, "
                             "description TEXT, "
-                            "price TEXT, "
+                            "price INT, "
                             "photo TEXT, "
                             "category TEXT)")
 
+    # Создание таблицы cart
     await connection.execute("CREATE TABLE IF NOT EXISTS cart("
                              "id SERIAL PRIMARY KEY, "
                              "user_id BIGINT NOT NULL, "
                              "item_id INT NOT NULL)")
 
+    # Создание таблицы history
     await connection.execute("CREATE TABLE IF NOT EXISTS history("
                              "id SERIAL PRIMARY KEY, "
                              "item_id INT NOT NULL, "
@@ -48,45 +68,45 @@ async def db_start():
     # Закрытие подключения
     await connection.close()
 
+# Добавление нового пользователя
 async def cmd_start_db(user_id):
     # Установление подключения к базе данных
     connection = await create_db_connection()
     # Проверка существования пользователя в таблице
     user = await connection.fetchrow("SELECT * FROM accounts WHERE tg_id = $1", user_id)
     if not user:
-        # Вставка данных в таблицу с использованием параметризированного запроса
+        # Вставка данных в таблицу
         await connection.execute("INSERT INTO accounts (tg_id) VALUES ($1)", user_id)
 
     # Закрытие подключения
     await connection.close()
 
+# Получение пути к фото по айди товара
 async def get_item_photo_by_id(i_id):
     try:
         # Установление подключения к базе данных
         connection = await create_db_connection()
         # Получение фотографии по i_id
         photo = await connection.fetchval("SELECT photo FROM items WHERE i_id = $1", i_id)
-        # Закрытие подключения
+
         return photo
     finally:
         await connection.close()
 
-
+# Получение пути к фото по названию товара
 async def get_item_photo_by_name(name):
     try:
         # Установление подключения к базе данных
         connection = await create_db_connection()
         # Получение фотографии по названию
         photo = await connection.fetchval("SELECT photo FROM items WHERE name = $1", name)
-        # Закрытие подключения
-        if photo is not None:
-            return photo
-        else:
-            return None  # Возвращаем None, если название товара не найдено
+
+        return photo
+
     finally:
         await connection.close()
 
-
+# Добавление в таблицу товара
 async def add_item(state):
     async with state.proxy() as data:
         connection = await create_db_connection()
@@ -96,7 +116,7 @@ async def add_item(state):
         )
         await connection.close()
 
-
+# Добавление товара в корзину
 async def add_item_to_cart(tg_id, item_id):
     connection = await create_db_connection()
     # Проверка наличия существующей записи
@@ -110,6 +130,7 @@ async def add_item_to_cart(tg_id, item_id):
             "DELETE FROM cart WHERE user_id = $1 AND item_id = $2",
             tg_id, item_id
         )
+
     # Вставка новой записи
     await connection.execute(
         "INSERT INTO cart (user_id, item_id) VALUES ($1, $2)",
@@ -118,16 +139,19 @@ async def add_item_to_cart(tg_id, item_id):
 
     await connection.close()
 
-
+# Удаление товара по названию
 async def delete_item_by_name(name):
     connection = await create_db_connection()
     await connection.execute("DELETE FROM items WHERE name = $1", name)
     await connection.close()
 
+# Удаление товара по id
 async def delete_item_by_id(id):
     connection = await create_db_connection()
     await connection.execute("DELETE FROM items WHERE i_id = $1", id)
     await connection.close()
+
+# Возвращает все пейзажи
 async def get_landscapes():
     connection = await create_db_connection()
     try:
@@ -137,6 +161,7 @@ async def get_landscapes():
     finally:
         await connection.close()
 
+# Возвращает натюрморты
 async def get_still_lifes():
     connection = await create_db_connection()
     try:
@@ -146,6 +171,7 @@ async def get_still_lifes():
     finally:
         await connection.close()
 
+# Возвращает портреты
 async def get_portrets():
     connection = await create_db_connection()
     try:
@@ -156,6 +182,7 @@ async def get_portrets():
     finally:
         await connection.close()
 
+# Возвращает все товары в корзине
 async def get_user_cart_items(user_id):
     try:
         connection = await create_db_connection()
@@ -171,21 +198,7 @@ async def get_user_cart_items(user_id):
         print(f"Произошла ошибка: {e}")
         return []
 
-async def get_user_cart_items(user_id):
-    try:
-        connection = await create_db_connection()
-        print("Успешное установление соединения с базой данных")
-        query = "SELECT items.i_id, items.name, items.description, items.price, items.photo " \
-                "FROM cart " \
-                "JOIN items ON cart.item_id = items.i_id " \
-                "WHERE cart.user_id = $1"
-        items = await connection.fetch(query, user_id)
-        print("Запрос к базе данных выполнен успешно")
-        return items
-    except Exception as e:
-        print(f"Произошла ошибка: {e}")
-        return []
-
+# Удаляет товар item_id в корзине пользователя с user_id
 async def delete_item_from_cart(user_id, item_id):
     try:
         connection = await create_db_connection()

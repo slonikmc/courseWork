@@ -1,33 +1,42 @@
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.dispatcher.filters import state
 from aiogram.types import callback_query
 from aiogram.types import InputFile
 from dotenv import load_dotenv
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
-import os
 from datetime import date
+from peewee import fn
 from app import keyboards as kb
 from app import database as db
 from app import models as md
-import pandas as pd
 from docx import Document
 import os
+import pandas as pd
+import yadisk
+import asyncio
 
+# Создание объекта хранилища памяти для сохранения состояний бота и данных сеансов
 storage = MemoryStorage()
+
+# Загрузка переменных среды из файла .env
 load_dotenv()
+
+# Инициализация бота
 bot = Bot(os.getenv('TOKEN'))
+
+# Инициализация диспетчера с передачей объекта бота и хранилища для работы с обработчиками и состояниями
 dp = Dispatcher(bot=bot, storage=storage)
 
-photo_directory = "C:/Users/Akelk/arts_store2/pythonProject/photo"  # Путь к папке с фотографиями
+# Путь к папке с фотографиями
+photo_directory = "C:/Users/Akelk/arts_store2/pythonProject/photo/"
 
-
+# Запуск бд
 async def on_startup(_):
     await db.db_start()
     print('Бот успешно запустился')
 
-
+# Машина состояний для добавления товара
 class NewOrder(StatesGroup):
     type = State()
     name = State()
@@ -35,12 +44,12 @@ class NewOrder(StatesGroup):
     price = State()
     photo = State()
 
-
+# Машина состояний для удаления товара
 class DeleteBy(StatesGroup):
     name = State()
     id = State()
 
-
+# обработчик команды /start
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
     await db.cmd_start_db(message.from_user.id)
@@ -50,7 +59,7 @@ async def cmd_start(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
         await message.answer(f'Вы авторизовались как администратор!', reply_markup=kb.main_admin)
 
-
+# Обработчик перехода в главное меню
 @dp.message_handler(text='В главное меню')
 async def process_main_menu(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -58,7 +67,7 @@ async def process_main_menu(message: types.Message):
     else:
         await message.answer('Выберите действие:', reply_markup=kb.main)
 
-
+# Обработчик для каталога
 @dp.message_handler(text='Каталог')
 async def catalog(message: types.Message):
     await message.answer(f'Держи!', reply_markup=kb.catalog_list)
@@ -67,7 +76,6 @@ async def catalog(message: types.Message):
 # Обработчик для кнопки "Удалить из корзины"
 @dp.callback_query_handler(lambda c: c.data.startswith('delete_'))
 async def delete_item_from_cart(call: types.CallbackQuery):
-    print("ПУСТО")
     user_id = call.from_user.id
     print(f"Содержимое callback_data: {call.data}")  # Вывод содержимого call.data для отладки
     item_id = int(call.data.split('_')[1])
@@ -76,38 +84,48 @@ async def delete_item_from_cart(call: types.CallbackQuery):
     cart_item = md.Cart.get_or_none(item_id=item_id, user_id=user_id)  # Получить конкретный товар из корзины
     if cart_item:  # Проверить, найден ли товар
         cart_item.delete_instance()
-        await bot.answer_callback_query(call.id, text="Товар удален из корзины")  # Ответить на запрос об удалении
+        await bot.answer_callback_query(call.id, text="Товар удален из корзины")
     else:
-        await bot.answer_callback_query(call.id, text="Товар не найден в корзине")  # Ответить, если товар не найден
+        await bot.answer_callback_query(call.id, text="Товар не найден в корзине")
+
+# test
+@dp.message_handler(content_types=['document', 'photo'])
+async def forward_message(message: types.Message):
+    await bot.forward_message(os.getenv('GROUP_ID'), message.from_user.id, message.message_id)
 
 
 # Обработчик для кнопки "Сделать заказ"
 @dp.callback_query_handler(lambda c: c.data.startswith('order_'))
 async def make_order(call: types.CallbackQuery):
     user_id = call.from_user.id
+    username = f"https://t.me/{call.from_user.username}"
+
     print(f"Содержимое callback_data: {call.data}")
     item_id = int(call.data.split('_')[1])
     print(f"Извлеченный item_id: {item_id}")
 
-    # Получаем цену товара
     item = md.Item.get(md.Item.i_id == item_id)
+
     if item:
+        photo = types.InputFile(item.photo)
+        await bot.send_photo(chat_id=os.getenv('GROUP_ID'), photo=photo,
+                         caption=f"Куплен товар item_id: {item_id}, пользователем {username}")
+        await delete_photo_by_filename(item.photo)
         price = item.price
 
         # Создаем запись в таблице History
         history_entry = md.History.create(item_id=item_id, i_id=user_id, date=date.today(), price=price)
         history_entry.save()
-
         item.delete_instance()
 
         cart_item = md.Cart.get_or_none(item_id=item_id)  # Получить конкретный товар из корзины
         if cart_item:  # Проверить, найден ли товар
             cart_item.delete_instance()
-        await bot.answer_callback_query(call.id, text="Заказ оформлен успешно")
+            await bot.answer_callback_query(call.id, text="Заказ оформлен успешно")
+        else:
+            await bot.answer_callback_query(call.id, text="Вы не успели, товар куплен!")
     else:
         await bot.answer_callback_query(call.id, text="Вы не успели, товар куплен!")
-
-
 
 
 # Функция для отображения корзины
@@ -119,6 +137,13 @@ async def cart(message: types.Message):
     query = md.Item.select(md.Item.i_id)
     cart_items_to_delete = md.Cart.delete().where(~(md.Cart.item_id.in_(query)))
     deleted_rows = cart_items_to_delete.execute()
+
+    subquery = (md.Cart
+                .select(fn.MIN(md.Cart.id))
+                .group_by(md.Cart.user_id, md.Cart.item_id))
+
+    query = md.Cart.delete().where(md.Cart.id.not_in(subquery))
+    query.execute()
 
     if deleted_rows:
         # Уведомляем пользователя об удаленных товарах из корзины
@@ -136,7 +161,7 @@ async def cart(message: types.Message):
             name = cart_item.name
             description = cart_item.description
             price = cart_item.price
-            photo = cart_item.photo
+            photo = types.InputFile(cart_item.photo)
 
             # Подготавливаем сообщение о товаре
             caption = f"ID товара: {item_id}, Название: {name}, Описание: {description}, Цена: {price}"
@@ -145,24 +170,18 @@ async def cart(message: types.Message):
             keyboard = kb.generate_cart_keyboard(item_id)
 
             # Отправляем сообщение с изображением товара
-            await bot.send_message(chat_id=message.chat.id, text=caption, reply_markup=keyboard)
             await bot.send_photo(chat_id=message.chat.id, photo=photo, caption=caption, reply_markup=keyboard)
     else:
-        # Отправляем уведомление, когда корзина пользователя пуста
         await message.reply("Ваша корзина пуста")
 
 
+# Обработчик для контактов
 @dp.message_handler(text='Контакты')
 async def contacts(message: types.Message):
     await message.reply('@slonikmc')
 
-import os
-import pandas as pd
-from aiogram import types
-from docx import Document
 
-# ... (остальной код)
-
+# Обработчик для выгрузки данных
 @dp.message_handler(text='Сделать выгрузку данных')
 async def import_to(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -201,14 +220,17 @@ async def import_to(message: types.Message):
     else:
         await message.reply('У Вас недостаточно прав')
 
-
+# Обработчик для истории заказов
 @dp.message_handler(text='История заказов')
 async def show_history(message: types.Message):
-    query = md.History.select()
+    if message.from_user.id == int(os.getenv('ADMIN_ID')):
+        query = md.History.select()
+    else:
+        query = md.History.select().where(md.History.i_id == message.from_user.id)
     orders_info = "История заказов:\n"
     if query.count() > 0:
-        for order in query:
-            order_info = f"Заказ №{order.item_id}: ID - {order.i_id}, Дата - {order.date}, Цена - {order.price}\n"
+        for index, order in enumerate(query, start=1):
+            order_info = f"Заказ №{index}: ID-товара - {order.item_id}, ID - {order.i_id}, Дата - {order.date}, Цена - {order.price}\n"
             orders_info += order_info
     else:
         orders_info = "Нет доступных заказов."
@@ -216,14 +238,15 @@ async def show_history(message: types.Message):
     await message.reply(orders_info)
 
 
+# Обработчик входа в панель администратора
 @dp.message_handler(text='Панель администратора')
 async def contacts(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
-        await message.answer(f'Вы вошли в админ-панель', reply_markup=kb.admin_panel)
+        await message.answer(f'Вы вошли в панель администратора', reply_markup=kb.admin_panel)
     else:
         await message.reply('Я тебя не понимаю.')
 
-
+# Удаление фотографии по имени товара
 async def delete_photo_by_filename(file_name):
     # Обработка пути к файлу
     file_path = os.path.join(photo_directory, file_name)
@@ -233,7 +256,7 @@ async def delete_photo_by_filename(file_name):
     else:
         return False
 
-
+# Обработчик удаления товара
 @dp.message_handler(text='Удалить товар')
 async def delete_by_name(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -242,6 +265,7 @@ async def delete_by_name(message: types.Message):
         await message.reply('У вас нет прав для выполнения этой команды.')
 
 
+# Обработчик для удаления по названию
 @dp.message_handler(text='Удалить по названию')
 async def delete_by_name(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -250,16 +274,16 @@ async def delete_by_name(message: types.Message):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
-
+# удаление по названию
 @dp.message_handler(state=DeleteBy.name)
 async def process_delete_by_name(message: types.Message, state: FSMContext):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
         name = message.text
-        item = md.Item.get_or_none(name=name)  # Retrieve the item by name from the database
+        item = md.Item.get_or_none(name=name)
         if item:
-            photo_name = item.photo  # Assuming the photo name is stored as an attribute on the Item model
-            item.delete_instance()  # Delete the item from the database
-            await delete_photo_by_filename(photo_name)  # Assuming a function to delete the photo by filename
+            photo_name = item.photo
+            item.delete_instance()
+            await delete_photo_by_filename(photo_name)
             await state.finish()
             await message.answer(f'Товар с названием "{name}" успешно удален вместе с фотографией.')
         else:
@@ -268,7 +292,7 @@ async def process_delete_by_name(message: types.Message, state: FSMContext):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
-
+# Обработчик для удаления по id
 @dp.message_handler(text='Удалить по id')
 async def delete_by_id(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -277,7 +301,7 @@ async def delete_by_id(message: types.Message):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
-
+# удаление по id
 @dp.message_handler(state=DeleteBy.id)
 async def process_delete_by_id(message: types.Message, state: FSMContext):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -295,7 +319,7 @@ async def process_delete_by_id(message: types.Message, state: FSMContext):
     else:
         await message.reply('У вас нет прав для выполнения этой команды.')
 
-
+# добавление в корзину
 @dp.callback_query_handler(lambda c: c.data.startswith('add_to_cart_'))
 async def add_to_cart_handler(call: types.CallbackQuery):
     split_data = call.data.split('_')
@@ -352,8 +376,17 @@ async def handle_show_portrets(message: types.Message):
                 keyboard = kb.generate_cart(prt.i_id)  # Assuming a function to generate the cart keyboard
                 await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
                                      caption=caption, reply_markup=keyboard)
+                await message.reply("Для заказа портрета перейдите в контакты")
     else:
         await message.reply("Портреты не найдены в каталоге")
+
+
+# Обработчик для бэкапа
+@dp.message_handler(text='Выполнить backup')
+async def handle_backup_command(message: types.Message):
+    # Вызов функции создания резервной копии с передачей объекта сообщения
+    await db.upload_backup()
+    await message.answer("БЭКАП ВЫПОЛНЕН")
 
 
 # Обработка отмены
@@ -363,7 +396,7 @@ async def cancel_add_item(message: types.Message, state: FSMContext):
     await message.answer('Добавление товара отменено.', reply_markup=kb.admin_panel)
 
 
-# Handling the addition of a new item
+# Добавление товара
 @dp.message_handler(text='Добавить товар')
 async def add_item_type(message: types.Message):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
@@ -373,7 +406,7 @@ async def add_item_type(message: types.Message):
         await message.reply('Доступ запрещен.')
 
 
-# Handling the states and message handlers for adding a new item using ORM
+# Функция для обработки типа товара и перехода в новое состояние
 @dp.callback_query_handler(state=NewOrder.type)
 async def add_item_type(call: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
@@ -400,10 +433,16 @@ async def add_item_name(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=NewOrder.price)
 async def add_item_name(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['price'] = message.text
-    await message.answer('Пришлите фотографию')
-    await NewOrder.next()
+    try:
+        price = int(message.text)  # Пытаемся преобразовать введенный текст в целое число
+        # В случае успешного преобразования сохраняем цену в данных состояния
+        async with state.proxy() as data:
+            data['price'] = price
+        await message.answer('Пожалуйста, прикрепите фотографию товара')
+        await NewOrder.next()
+    except ValueError:
+        # В случае, если введенный текст не может быть преобразован в целое число
+        await message.answer('Пожалуйста, введите целочисленную цену товара')
 
 
 @dp.message_handler(content_types=['photo'], state=NewOrder.photo)
@@ -416,7 +455,7 @@ async def add_item_photo(message: types.Message, state: FSMContext):
         downloaded_file = await bot.download_file(file_info.file_path)
         with open(photo_path, 'wb') as new_file:
             new_file.write(downloaded_file.read())
-        data['photo'] = file_name
+        data['photo'] = photo_directory + file_name
         print(data['type'], data['name'], data['description'], data['price'], data['photo'])
         # Create a new item in the database using the provided details
         new_item = md.Item(category=data['type'], name=data['name'], description=data['description'],
@@ -426,17 +465,14 @@ async def add_item_photo(message: types.Message, state: FSMContext):
     await state.finish()
 
 
+# test
 @dp.message_handler(content_types=['sticker'])
 async def check_sticker(message: types.Message):
     await message.answer(message.sticker.file_id)
     await bot.send_message(message.from_user.id, message.chat.id)
 
 
-@dp.message_handler(content_types=['document', 'photo'])
-async def forward_message(message: types.Message):
-    await bot.forward_message(os.getenv('GROUP_ID'), message.from_user.id, message.message_id)
-
-
+# обработчик выбора какую категорию будем смотреть
 @dp.callback_query_handler()
 async def callback_query_keyboard(callback_query: types.CallbackQuery):
     if callback_query.data == 'naturmorts':
@@ -450,9 +486,10 @@ async def callback_query_keyboard(callback_query: types.CallbackQuery):
         await handle_show_portrets(callback_query.message)
 
 
+# В любой непонятной ситуации:
 @dp.message_handler()
 async def answer(message: types.Message):
-    await message.reply('Я тебя не понимаю')
+    await message.reply('Я Вас не понимаю :(')
 
 
 if __name__ == '__main__':
