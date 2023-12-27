@@ -1,8 +1,7 @@
 import asyncio
-
 import asyncpg
 from peewee import PostgresqlDatabase
-import yadisk
+
 
 db = PostgresqlDatabase(
         user='postgres',
@@ -21,18 +20,7 @@ async def create_db_connection():
         database='tg'
     )
 
-# Асинхронная функция для создания резервной копии и загрузки на Яндекс.Диск
-async def upload_backup():
-    # Создание резервной копии базы данных с помощью pg_dump
-    # pg_dump_command = r".\pg_dump -U postgres -h localhost -d tg > C:/Users/Akelk/arts_store2/pythonProject/backup.sql"
-    # subprocess.run(pg_dump_command, shell=True)
 
-    # Загрузка резервной копии на Яндекс.Диск
-    y = yadisk.YaDisk(token="y0_AgAAAAA0sAXgAAsLIQAAAAD14tMCkWyDfpgdRbiUqY8blmvUr8TNDL0")
-    if y.exists(f"/backup.sql"):
-        y.remove(f"/backup.sql")
-
-    y.upload("backup.sql", f"/backup.sql")
 
 # Функция для создания всех используемых таблиц, если их нет
 async def db_start():

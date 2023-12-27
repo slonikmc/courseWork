@@ -1,0 +1,339 @@
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 16.0
+-- Dumped by pg_dump version 16.0
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: accounts; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.accounts (
+    id integer NOT NULL,
+    tg_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.accounts OWNER TO postgres;
+
+--
+-- Name: accounts_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.accounts_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.accounts_id_seq OWNER TO postgres;
+
+--
+-- Name: accounts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.accounts_id_seq OWNED BY public.accounts.id;
+
+
+--
+-- Name: cart; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.cart (
+    id integer NOT NULL,
+    user_id bigint NOT NULL,
+    item_id integer NOT NULL
+);
+
+
+ALTER TABLE public.cart OWNER TO postgres;
+
+--
+-- Name: cart_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.cart_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.cart_id_seq OWNER TO postgres;
+
+--
+-- Name: cart_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.cart_id_seq OWNED BY public.cart.id;
+
+
+--
+-- Name: history; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.history (
+    id integer NOT NULL,
+    item_id integer NOT NULL,
+    i_id bigint NOT NULL,
+    date date NOT NULL,
+    price integer NOT NULL
+);
+
+
+ALTER TABLE public.history OWNER TO postgres;
+
+--
+-- Name: history_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.history_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.history_id_seq OWNER TO postgres;
+
+--
+-- Name: history_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.history_id_seq OWNED BY public.history.id;
+
+
+--
+-- Name: items; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.items (
+    i_id integer NOT NULL,
+    name text,
+    description text,
+    price integer,
+    photo text,
+    category text
+);
+
+
+ALTER TABLE public.items OWNER TO postgres;
+
+--
+-- Name: items_i_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.items_i_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.items_i_id_seq OWNER TO postgres;
+
+--
+-- Name: items_i_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.items_i_id_seq OWNED BY public.items.i_id;
+
+
+--
+-- Name: accounts id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.accounts ALTER COLUMN id SET DEFAULT nextval('public.accounts_id_seq'::regclass);
+
+
+--
+-- Name: cart id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.cart ALTER COLUMN id SET DEFAULT nextval('public.cart_id_seq'::regclass);
+
+
+--
+-- Name: history id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.history ALTER COLUMN id SET DEFAULT nextval('public.history_id_seq'::regclass);
+
+
+--
+-- Name: items i_id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.items ALTER COLUMN i_id SET DEFAULT nextval('public.items_i_id_seq'::regclass);
+
+
+--
+-- Data for Name: accounts; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.accounts (id, tg_id) FROM stdin;
+1	1995659551
+2	915441210
+3	1947952061
+4	5358513839
+5	449529034
+6	482982360
+7	6186488969
+8	1366526992
+9	2040191390
+\.
+
+
+--
+-- Data for Name: cart; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.cart (id, user_id, item_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: history; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.history (id, item_id, i_id, date, price) FROM stdin;
+1	21	915441210	2023-12-24	1356
+2	21	915441210	2023-12-24	1356
+3	22	915441210	2023-12-24	12
+4	20	482982360	2023-12-24	133
+5	22	915441210	2023-12-24	12
+6	22	915441210	2023-12-24	12
+7	22	915441210	2023-12-24	12
+8	22	915441210	2023-12-24	12
+9	22	915441210	2023-12-24	12
+10	26	915441210	2023-12-24	123
+11	26	915441210	2023-12-24	123
+12	22	6186488969	2023-12-24	12
+13	28	6186488969	2023-12-24	125
+14	27	915441210	2023-12-24	123
+15	29	6186488969	2023-12-24	1234
+16	30	915441210	2023-12-24	23452354
+17	2	915441210	2023-12-25	123
+18	1	915441210	2023-12-25	12332
+19	3	915441210	2023-12-25	123
+20	4	915441210	2023-12-25	123
+21	6	915441210	2023-12-25	123
+22	5	915441210	2023-12-25	12
+23	7	915441210	2023-12-25	3123
+24	8	482982360	2023-12-25	100
+25	9	482982360	2023-12-25	1233
+26	11	6186488969	2023-12-25	1
+27	10	6186488969	2023-12-25	1
+28	12	6186488969	2023-12-25	12
+29	13	915441210	2023-12-26	123
+30	14	915441210	2023-12-27	1000
+\.
+
+
+--
+-- Data for Name: items; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.items (i_id, name, description, price, photo, category) FROM stdin;
+15	Море	150х200 холст масло	2000	C:/Users/Akelk/arts_store2/pythonProject/photo/photo_AgACAgIAAxkBAAILtmWL_B1Nf1NEv4CgeJ8rwgvgDewSAAK5zzEbjNQYSNt5qTmgE4vkAQADAgADeQADMwQ.jpg	peizaj
+16	Подсолнухи	50х80	3000	C:/Users/Akelk/arts_store2/pythonProject/photo/photo_AgACAgIAAxkBAAILwWWL_IAVX7aawr9a0nJAMvB1z8RLAAPQMRtN1GBI7Vwsoi2_e0IBAAMCAAN5AAMzBA.jpg	naturmorts
+17	Ирисы	40х60 масло холст	1500	C:/Users/Akelk/arts_store2/pythonProject/photo/photo_AgACAgIAAxkBAAILzGWL_L62J6noB-1PjTsBSpvQS-NWAAIF0DEbTdRgSDAVnU7bvyX4AQADAgADeQADMwQ.jpg	naturmorts
+\.
+
+
+--
+-- Name: accounts_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.accounts_id_seq', 9, true);
+
+
+--
+-- Name: cart_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.cart_id_seq', 91, true);
+
+
+--
+-- Name: history_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.history_id_seq', 30, true);
+
+
+--
+-- Name: items_i_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.items_i_id_seq', 18, true);
+
+
+--
+-- Name: accounts accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.accounts
+    ADD CONSTRAINT accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cart cart_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.cart
+    ADD CONSTRAINT cart_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: history history_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.history
+    ADD CONSTRAINT history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: items items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.items
+    ADD CONSTRAINT items_pkey PRIMARY KEY (i_id);
+
+
+--
+-- Name: account_tg_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX account_tg_id ON public.accounts USING btree (tg_id);
+
+
+--
+-- PostgreSQL database dump complete
+--
+

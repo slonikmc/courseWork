@@ -46,7 +46,7 @@ class History(BaseModel):
 
     class Meta:
         table_name = 'history'
-        database = db  # Set the database attribute on the History model
+        database = db
 
 # Соединение с базой данных и подключение к ней
 async def setup_database():

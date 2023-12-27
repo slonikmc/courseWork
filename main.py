@@ -13,8 +13,9 @@ from app import models as md
 from docx import Document
 import os
 import pandas as pd
-import yadisk
 import asyncio
+import subprocess
+import yadisk
 
 # Создание объекта хранилища памяти для сохранения состояний бота и данных сеансов
 storage = MemoryStorage()
@@ -306,11 +307,11 @@ async def delete_by_id(message: types.Message):
 async def process_delete_by_id(message: types.Message, state: FSMContext):
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
         id = message.text
-        item = md.Item.get_or_none(i_id=id)  # Retrieve the item by name from the database
+        item = md.Item.get_or_none(i_id=id)
         if item:
-            photo_name = item.photo  # Assuming the photo name is stored as an attribute on the Item model
-            item.delete_instance()  # Delete the item from the database
-            await delete_photo_by_filename(photo_name)  # Assuming a function to delete the photo by filename
+            photo_name = item.photo
+            item.delete_instance()
+            await delete_photo_by_filename(photo_name)
             await state.finish()
             await message.answer(f'Товар с артикулом "{id}" успешно удален вместе с фотографией.')
         else:
@@ -334,14 +335,14 @@ async def add_to_cart_handler(call: types.CallbackQuery):
 @dp.message_handler(text='Пейзажи')
 async def handle_show_landscapes(message: types.Message):
     landscapes = md.Item.select().where(
-        md.Item.category == 'peizaj')  # Assuming 'Пейзажи' is the category for landscapes
+        md.Item.category == 'peizaj')
     if landscapes:
         for landscape in landscapes:
             photo_path = os.path.join(photo_directory,
-                                      landscape.photo)  # Assuming 'photo' is the attribute representing the photo path
+                                      landscape.photo)
             with open(photo_path, 'rb') as photo_file:
                 caption = f"Артикул: {landscape.i_id}, Название: {landscape.name}, Описание: {landscape.description}, Цена: {landscape.price}"
-                keyboard = kb.generate_cart(landscape.i_id)  # Assuming a function to generate the cart keyboard
+                keyboard = kb.generate_cart(landscape.i_id)
                 await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
                                      caption=caption, reply_markup=keyboard)
     else:
@@ -354,10 +355,10 @@ async def handle_show_still_life(message: types.Message):
     if still_life:
         for still_l in still_life:
             photo_path = os.path.join(photo_directory,
-                                      still_l.photo)  # Assuming 'photo' is the attribute representing the photo path
+                                      still_l.photo)
             with open(photo_path, 'rb') as photo_file:
                 caption = f"Артикул: {still_l.i_id}, Название: {still_l.name}, Описание: {still_l.description}, Цена: {still_l.price}"
-                keyboard = kb.generate_cart(still_l.i_id)  # Assuming a function to generate the cart keyboard
+                keyboard = kb.generate_cart(still_l.i_id)
                 await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
                                      caption=caption, reply_markup=keyboard)
     else:
@@ -370,10 +371,10 @@ async def handle_show_portrets(message: types.Message):
     if portret:
         for prt in portret:
             photo_path = os.path.join(photo_directory,
-                                      prt.photo)  # Assuming 'photo' is the attribute representing the photo path
+                                      prt.photo)
             with open(photo_path, 'rb') as photo_file:
                 caption = f"Артикул: {prt.i_id}, Название: {prt.name}, Описание: {prt.description}, Цена: {prt.price}"
-                keyboard = kb.generate_cart(prt.i_id)  # Assuming a function to generate the cart keyboard
+                keyboard = kb.generate_cart(prt.i_id)
                 await bot.send_photo(chat_id=message.chat.id, photo=types.InputFile(photo_file, filename='photo'),
                                      caption=caption, reply_markup=keyboard)
                 await message.reply("Для заказа портрета перейдите в контакты")
@@ -385,7 +386,7 @@ async def handle_show_portrets(message: types.Message):
 @dp.message_handler(text='Выполнить backup')
 async def handle_backup_command(message: types.Message):
     # Вызов функции создания резервной копии с передачей объекта сообщения
-    await db.upload_backup()
+    await upload_backup()
     await message.answer("БЭКАП ВЫПОЛНЕН")
 
 
@@ -448,7 +449,7 @@ async def add_item_name(message: types.Message, state: FSMContext):
 @dp.message_handler(content_types=['photo'], state=NewOrder.photo)
 async def add_item_photo(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        # Save the photo to the server and store the file path in the data
+
         file_name = f"photo_{message.photo[-1].file_id}.jpg"
         photo_path = os.path.join(photo_directory, file_name)
         file_info = await bot.get_file(message.photo[-1].file_id)
@@ -457,10 +458,10 @@ async def add_item_photo(message: types.Message, state: FSMContext):
             new_file.write(downloaded_file.read())
         data['photo'] = photo_directory + file_name
         print(data['type'], data['name'], data['description'], data['price'], data['photo'])
-        # Create a new item in the database using the provided details
+
         new_item = md.Item(category=data['type'], name=data['name'], description=data['description'],
                            price=data['price'], photo=data['photo'])
-        new_item.save()  # Assuming 'save' is the method to save a new item to the database
+        new_item.save()
     await message.answer('Товар успешно загружен!', reply_markup=kb.admin_panel)
     await state.finish()
 
@@ -491,6 +492,30 @@ async def callback_query_keyboard(callback_query: types.CallbackQuery):
 async def answer(message: types.Message):
     await message.reply('Я Вас не понимаю :(')
 
+# Асинхронная функция для создания резервной копии и загрузки на Яндекс.Диск
+async def upload_backup():
+    os.environ["PGPASSWORD"] = "Azaza431"
+    os.chdir(r'C:/Program Files/PostgreSQL/16/bin')
+
+    command = 'pg_dump -h {0} -U {1} -p 5432 -d {2} --file="C:\\Users\\Akelk\\arts_store2\\pythonProject\\backup.dump" --format=p'.format("localhost", "postgres", "tg")
+    p = subprocess.Popen(command, shell=True)
+    p.wait()
+
+    # Загрузка резервной копии на Яндекс.Диск
+    y = yadisk.YaDisk(token="y0_AgAAAAA0sAXgAAsLIQAAAAD14tMCkWyDfpgdRbiUqY8blmvUr8TNDL0")
+    if y.exists(f"/backup.dump"):
+        y.remove(f"/backup.dump")
+
+    y.upload("C:/Users/Akelk/arts_store2/pythonProject/backup.dump", f"/backup.dump")
+
+
+async def sheduler():
+    while True:
+        await upload_backup()
+        await asyncio.sleep(60 * 60)
 
 if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.create_task(sheduler())
+
     executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
